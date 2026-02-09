@@ -2,10 +2,12 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/biodoia/goclit-ai/internal/providers"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -59,6 +61,10 @@ type App struct {
 	agents        []AgentItem
 	selectedAgent int
 	agentRunning  bool
+
+	// Provider
+	provider     *providers.Client
+	providerErr  string
 }
 
 func NewApp() App {
@@ -77,6 +83,13 @@ func NewApp() App {
 	// Layout with bubblelayout
 	layout, ids := NewLayout()
 
+	// Auto-detect provider
+	provider, providerErr := providers.AutoDetect()
+	errMsg := ""
+	if providerErr != nil {
+		errMsg = providerErr.Error()
+	}
+
 	return App{
 		state:     StateIntro,
 		introTime: time.Now(),
@@ -91,6 +104,8 @@ func NewApp() App {
 		messages: []Message{
 			{Role: "system", Content: "Welcome to GOCLIT - The Dream CLI", Time: time.Now()},
 		},
+		provider:    provider,
+		providerErr: errMsg,
 	}
 }
 
@@ -267,18 +282,40 @@ func (a *App) processCommand(cmd string) tea.Cmd {
 	a.agentRunning = true
 	agent := a.agents[a.selectedAgent]
 
-	return tea.Tick(time.Millisecond*800, func(t time.Time) tea.Msg {
-		response := fmt.Sprintf("Received: %s\n\n⚠️ Provider not configured. Run: goclit config --provider <name>", cmd)
+	// Check if provider is available
+	if a.provider == nil {
+		return func() tea.Msg {
+			return agentResponseMsg{
+				agent:   agent.Name,
+				content: fmt.Sprintf("⚠️ No provider configured.\n\n%s\n\nSet OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or start Ollama/GoBro.", a.providerErr),
+			}
+		}
+	}
 
-		if strings.HasPrefix(strings.ToLower(cmd), "ultrawork") {
-			response = "🚀 ULTRAWORK MODE\n━━━━━━━━━━━━━━━━━━\nAll agents coordinating...\n\n⚠️ Connect a provider first:\ngoclit config --provider claude"
+	// Real API call
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		// Build messages
+		messages := []providers.Message{
+			{Role: "system", Content: fmt.Sprintf("You are %s, a specialized AI agent. %s", agent.Name, agent.Role)},
+			{Role: "user", Content: cmd},
+		}
+
+		response, err := a.provider.Chat(ctx, messages)
+		if err != nil {
+			return agentResponseMsg{
+				agent:   agent.Name,
+				content: fmt.Sprintf("❌ Error: %v", err),
+			}
 		}
 
 		return agentResponseMsg{
 			agent:   agent.Name,
 			content: response,
 		}
-	})
+	}
 }
 
 func (a App) View() string {
@@ -395,11 +432,23 @@ func (a App) renderHeader() string {
 		Foreground(Gray500).
 		Render(" v0.2.0")
 
+	// Provider status
+	providerStatus := ""
+	if a.provider != nil {
+		providerStatus = lipgloss.NewStyle().
+			Foreground(Green).
+			Render(" │ " + a.provider.ProviderName() + ":" + a.provider.Model())
+	} else {
+		providerStatus = lipgloss.NewStyle().
+			Foreground(Red).
+			Render(" │ No Provider")
+	}
+
 	return lipgloss.NewStyle().
 		Width(a.width).
 		Background(BgHighlight).
 		Padding(0, 1).
-		Render(logo + ver)
+		Render(logo + ver + providerStatus)
 }
 
 func (a App) renderPanes() string {
