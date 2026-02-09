@@ -17,23 +17,33 @@ const (
 	frameTime         = time.Second / fps
 )
 
-// Robot logo ASCII art
+// Terminal Eye logo - AI che vede il codice
 var robotLogo = []string{
-	"      ★      ",
-	"   ▄▄▄▄▄▄▄   ",
-	"   █ ◉ ◉ █   ",
-	"   █  ▼  █   ",
-	"   █ ╰─╯ █   ",
-	"   ▀▀▀▀▀▀▀   ",
+	"             ",
+	" ╭─────────╮ ",
+	" │  ◉   ◉  │ ",
+	" │    ▼    │ ",
+	" │  ╰───╯  │ ",
+	" ╰─────────╯ ",
 }
 
+// Blinking eye animation frames
 var robotLogoNoAntenna = []string{
 	"             ",
-	"   ▄▄▄▄▄▄▄   ",
-	"   █ ◉ ◉ █   ",
-	"   █  ▼  █   ",
-	"   █ ╰─╯ █   ",
-	"   ▀▀▀▀▀▀▀   ",
+	" ╭─────────╮ ",
+	" │  ─   ─  │ ",
+	" │    ▼    │ ",
+	" │  ╰───╯  │ ",
+	" ╰─────────╯ ",
+}
+
+// Eye scanning animation
+var eyeFrames = [][]string{
+	{" ◉   ◉ "}, // center
+	{" ◉  ◉  "}, // left
+	{"  ◉   ◉"}, // right
+	{" ◉   ◉ "}, // center
+	{" ─   ─ "}, // blink
 }
 
 const goclitText = "G O C L I T"
