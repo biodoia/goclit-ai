@@ -11,21 +11,30 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/biodoia/goclit-ai/internal/tui"
 )
 
 const version = "0.2.0"
 
-const banner = `
-   ██████╗  ██████╗  ██████╗██╗     ██╗████████╗
-  ██╔════╝ ██╔═══██╗██╔════╝██║     ██║╚══██╔══╝
-  ██║  ███╗██║   ██║██║     ██║     ██║   ██║   
-  ██║   ██║██║   ██║██║     ██║     ██║   ██║   
-  ╚██████╔╝╚██████╔╝╚██████╗███████╗██║   ██║   
-   ╚═════╝  ╚═════╝  ╚═════╝╚══════╝╚═╝   ╚═╝   
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  The Dream CLI - Synthesis of 65 coding agents
-  v%s
-`
+// Robot logo for animated intro
+var robotLogo = []string{
+	"      ★      ",
+	"   ▄▄▄▄▄▄▄   ",
+	"   █ ◉ ◉ █   ",
+	"   █  ▼  █   ",
+	"   █ ╰─╯ █   ",
+	"   ▀▀▀▀▀▀▀   ",
+}
+
+var robotLogoNoAntenna = []string{
+	"             ",
+	"   ▄▄▄▄▄▄▄   ",
+	"   █ ◉ ◉ █   ",
+	"   █  ▼  █   ",
+	"   █ ╰─╯ █   ",
+	"   ▀▀▀▀▀▀▀   ",
+}
 
 const help = `
 USAGE:
@@ -67,14 +76,23 @@ SPECIALIZED AGENTS:
 
 func main() {
 	if len(os.Args) < 2 {
-		printBanner()
-		fmt.Println(help)
+		// Interactive TUI mode (no args)
+		if err := tui.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
 	cmd := os.Args[1]
 
 	switch cmd {
+	case "tui":
+		// Explicit TUI mode
+		if err := tui.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	case "--help", "-h", "help":
 		printBanner()
 		fmt.Println(help)
@@ -145,84 +163,123 @@ func main() {
 }
 
 func printBanner() {
-	// Check if animation is enabled (default: yes for interactive terminals)
 	if isInteractive() && !noAnimation() {
-		// Animated banner with spring physics
 		playAnimatedBanner()
 	} else {
 		// Static fallback
-		fmt.Printf(banner, version)
+		printStaticBanner()
 	}
 }
 
+func printStaticBanner() {
+	cyan := "\033[36m"
+	reset := "\033[0m"
+	for _, line := range robotLogo {
+		fmt.Println(cyan + line + reset)
+	}
+	fmt.Println()
+	fmt.Println("  G O C L I T")
+	fmt.Printf("  v%s - The Dream CLI\n\n", version)
+}
+
 func isInteractive() bool {
-	// TODO: Check if stdout is a TTY
 	return true
 }
 
 func noAnimation() bool {
-	// Check NO_ANIMATION or ACCESSIBILITY env vars
 	return os.Getenv("NO_ANIMATION") == "1" || os.Getenv("GOCLIT_NO_ANIMATION") == "1"
 }
 
 func playAnimatedBanner() {
-	// Quick animation (1.5 seconds)
-	fmt.Print("\033[2J\033[H") // Clear screen
-	
-	frames := []string{
-		// Frame 1 - Logo slides in
-		`
-   ██████╗  ██████╗  ██████╗██╗     ██╗████████╗
-  ██╔════╝ ██╔═══██╗██╔════╝██║     ██║╚══██╔══╝
-`,
-		// Frame 2 - More logo
-		`
-   ██████╗  ██████╗  ██████╗██╗     ██╗████████╗
-  ██╔════╝ ██╔═══██╗██╔════╝██║     ██║╚══██╔══╝
-  ██║  ███╗██║   ██║██║     ██║     ██║   ██║   
-  ██║   ██║██║   ██║██║     ██║     ██║   ██║   
-`,
-		// Frame 3 - Full logo
-		`
-   ██████╗  ██████╗  ██████╗██╗     ██╗████████╗
-  ██╔════╝ ██╔═══██╗██╔════╝██║     ██║╚══██╔══╝
-  ██║  ███╗██║   ██║██║     ██║     ██║   ██║   
-  ██║   ██║██║   ██║██║     ██║     ██║   ██║   
-  ╚██████╔╝╚██████╔╝╚██████╗███████╗██║   ██║   
-   ╚═════╝  ╚═════╝  ╚═════╝╚══════╝╚═╝   ╚═╝   
-`,
-		// Frame 4 - With tagline
-		`
-   ██████╗  ██████╗  ██████╗██╗     ██╗████████╗
-  ██╔════╝ ██╔═══██╗██╔════╝██║     ██║╚══██╔══╝
-  ██║  ███╗██║   ██║██║     ██║     ██║   ██║   
-  ██║   ██║██║   ██║██║     ██║     ██║   ██║   
-  ╚██████╔╝╚██████╔╝╚██████╗███████╗██║   ██║   
-   ╚═════╝  ╚═════╝  ╚═════╝╚══════╝╚═╝   ╚═╝   
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`,
-		// Frame 5 - With robot
-		`
-   ██████╗  ██████╗  ██████╗██╗     ██╗████████╗
-  ██╔════╝ ██╔═══██╗██╔════╝██║     ██║╚══██╔══╝
-  ██║  ███╗██║   ██║██║     ██║     ██║   ██║   
-  ██║   ██║██║   ██║██║     ██║     ██║   ██║   
-  ╚██████╔╝╚██████╔╝╚██████╗███████╗██║   ██║   
-   ╚═════╝  ╚═════╝  ╚═════╝╚══════╝╚═╝   ╚═╝   
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        ✨ Agents are listening... ✨  🤖
-`,
+	cyan := "\033[36m"
+	purple := "\033[35m"
+	white := "\033[97m"
+	dim := "\033[2m"
+	reset := "\033[0m"
+	clear := "\033[2J\033[H"
+	home := "\033[H"
+
+	// Phase 1: Black screen (300ms)
+	fmt.Print(clear)
+	time.Sleep(300 * time.Millisecond)
+
+	// Phase 2: Logo with flicker (600ms)
+	for i := 0; i < 8; i++ {
+		fmt.Print(home)
+		fmt.Println()
+		fmt.Println()
+
+		// Flicker effect - random visibility
+		if i%3 == 0 || i > 4 {
+			// Show logo
+			color := purple
+			if i > 5 {
+				color = cyan
+			}
+			for _, line := range robotLogoNoAntenna {
+				fmt.Println(color + "        " + line + reset)
+			}
+		} else {
+			// Blank during flicker
+			for range robotLogoNoAntenna {
+				fmt.Println()
+			}
+		}
+		time.Sleep(75 * time.Millisecond)
 	}
 
-	for _, frame := range frames {
-		fmt.Print("\033[H") // Cursor home
-		fmt.Print("\033[36m") // Cyan
-		fmt.Print(frame)
-		fmt.Print("\033[0m") // Reset
+	// Phase 3: Antenna flicker (400ms)
+	for i := 0; i < 6; i++ {
+		fmt.Print(home)
+		fmt.Println()
+		fmt.Println()
+
+		var logo []string
+		if i%2 == 0 {
+			logo = robotLogo // With antenna
+		} else {
+			logo = robotLogoNoAntenna // Without antenna
+		}
+
+		for _, line := range logo {
+			fmt.Println(cyan + "        " + line + reset)
+		}
+		time.Sleep(70 * time.Millisecond)
+	}
+
+	// Final logo stable
+	fmt.Print(home)
+	fmt.Println()
+	fmt.Println()
+	for _, line := range robotLogo {
+		fmt.Println(cyan + "        " + line + reset)
+	}
+	fmt.Println()
+
+	// Phase 4: GOCLIT letter by letter (500ms)
+	title := "G O C L I T"
+	fmt.Print("        ")
+	for _, ch := range title {
+		fmt.Print(white + string(ch) + reset)
+		time.Sleep(50 * time.Millisecond)
+	}
+	fmt.Println()
+	time.Sleep(100 * time.Millisecond)
+
+	// Phase 5: Tagline
+	fmt.Println(dim + "        The Dream CLI" + reset)
+	fmt.Println(cyan + "        v" + version + reset)
+	fmt.Println()
+
+	// Phase 6: Agents listening with sparkle
+	sparkles := []string{"✨", "⚡", "💫", "🌟"}
+	for i := 0; i < 3; i++ {
+		s := sparkles[i%len(sparkles)]
+		fmt.Print("\r        " + s + " Agents are listening... " + s + "  ")
 		time.Sleep(150 * time.Millisecond)
 	}
-	
-	fmt.Printf("\n  v%s - The Dream CLI\n\n", version)
+	fmt.Println()
+	fmt.Println()
 }
 
 func runUltrawork(task string) {
