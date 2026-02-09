@@ -1,4 +1,4 @@
-// App - Main TUI application
+// App - Main TUI application with pane layout
 package tui
 
 import (
@@ -18,64 +18,37 @@ type AppState int
 const (
 	StateIntro AppState = iota
 	StateMain
-	StateAgentSelect
-	StateRunning
 )
 
 // Message represents a chat message
 type Message struct {
-	Role    string // "user", "assistant", "system"
+	Role    string
 	Content string
 	Time    time.Time
-	Agent   string // Which agent responded
+	Agent   string
 }
 
 // App is the main TUI model
 type App struct {
-	// Dimensions
 	width  int
 	height int
 
-	// State
 	state     AppState
-	intro     IntroModel
 	introTime time.Time
+	introFrame int
 
-	// UI Components
+	// Pane layout
+	panes *PaneLayout
+
+	// Input
 	input   textinput.Model
 	spinner spinner.Model
 
-	// Chat
-	messages    []Message
-	currentTask string
-
-	// Agents
-	agents       []AgentInfo
-	activeAgent  int
+	// Data
+	messages     []Message
+	agents       []AgentItem
+	selectedAgent int
 	agentRunning bool
-
-	// Focus
-	focusPane int // 0=agents, 1=chat, 2=input
-}
-
-// AgentInfo describes an agent
-type AgentInfo struct {
-	Icon   string
-	Name   string
-	Role   string
-	Color  lipgloss.Color
-	Active bool
-}
-
-// Initialize default agents
-var defaultAgents = []AgentInfo{
-	{"⚙️", "Sisyphus", "Discipline", Purple, false},
-	{"🔨", "Hephaestus", "Autonomy", Blue, false},
-	{"🔮", "Oracle", "Knowledge", Cyan, false},
-	{"📚", "Librarian", "Search", Green, false},
-	{"🎨", "Frontend", "UI/UX", Pink, false},
-	{"⚡", "Backend", "Server", Orange, false},
-	{"🔧", "DevOps", "Infra", Yellow, false},
 }
 
 func NewApp() App {
@@ -84,6 +57,7 @@ func NewApp() App {
 	ti.Placeholder = "Ask anything or type a command..."
 	ti.CharLimit = 500
 	ti.Width = 60
+	ti.Focus()
 
 	// Spinner
 	s := spinner.New()
@@ -92,19 +66,14 @@ func NewApp() App {
 
 	return App{
 		state:     StateIntro,
-		intro:     NewIntro(80, 24),
 		introTime: time.Now(),
+		panes:     NewPaneLayout(),
 		input:     ti,
 		spinner:   s,
-		agents:    defaultAgents,
+		agents:    DefaultAgents(),
 		messages: []Message{
-			{
-				Role:    "system",
-				Content: "Welcome to GOCLIT - The Dream CLI",
-				Time:    time.Now(),
-			},
+			{Role: "system", Content: "Welcome to GOCLIT - The Dream CLI", Time: time.Now()},
 		},
-		focusPane: 2, // Start focused on input
 	}
 }
 
@@ -128,11 +97,25 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Quit
 			}
 		case "tab":
-			// Cycle focus between panes
-			a.focusPane = (a.focusPane + 1) % 3
+			if a.state == StateMain {
+				a.panes.FocusNext()
+			}
+		case "shift+tab":
+			if a.state == StateMain {
+				a.panes.FocusPrev()
+			}
+		case "up", "k":
+			if a.panes.focusedPane == PaneAgents && a.selectedAgent > 0 {
+				a.selectedAgent--
+				a.updateAgentsPane()
+			}
+		case "down", "j":
+			if a.panes.focusedPane == PaneAgents && a.selectedAgent < len(a.agents)-1 {
+				a.selectedAgent++
+				a.updateAgentsPane()
+			}
 		case "enter":
-			if a.focusPane == 2 && a.input.Value() != "" {
-				// Submit message
+			if a.panes.focusedPane == PaneChat && a.input.Value() != "" {
 				userMsg := a.input.Value()
 				a.messages = append(a.messages, Message{
 					Role:    "user",
@@ -140,46 +123,39 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Time:    time.Now(),
 				})
 				a.input.Reset()
-				a.currentTask = userMsg
-
-				// Simulate agent response
+				a.updateChatPane()
 				cmds = append(cmds, a.processCommand(userMsg))
-			}
-		case "up", "down":
-			if a.focusPane == 0 {
-				// Navigate agents
-				if msg.String() == "up" && a.activeAgent > 0 {
-					a.activeAgent--
-				}
-				if msg.String() == "down" && a.activeAgent < len(a.agents)-1 {
-					a.activeAgent++
-				}
 			}
 		}
 
 		// Skip intro on any key
 		if a.state == StateIntro {
 			a.state = StateMain
-			a.input.Focus()
+			a.panes.SetSize(a.width, a.height-3) // Reserve space for input
+			a.updateAgentsPane()
+			a.updateChatPane()
 		}
 
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		a.intro.width = msg.Width
-		a.intro.height = msg.Height
-		a.input.Width = msg.Width - 10
+		a.input.Width = msg.Width - 6
+		if a.state == StateMain {
+			a.panes.SetSize(a.width, a.height-3)
+			a.updateAgentsPane()
+			a.updateChatPane()
+		}
 
 	case tickMsg:
+		a.introFrame++
 		if a.state == StateIntro {
-			// Check if intro animation is done
-			if time.Since(a.introTime) > animationDuration {
+			elapsed := time.Since(a.introTime)
+			if elapsed > 2500*time.Millisecond {
 				a.state = StateMain
-				a.input.Focus()
+				a.panes.SetSize(a.width, a.height-3)
+				a.updateAgentsPane()
+				a.updateChatPane()
 			}
-			newIntro, cmd := a.intro.Update(msg)
-			a.intro = newIntro.(IntroModel)
-			cmds = append(cmds, cmd)
 		}
 		cmds = append(cmds, tick())
 
@@ -196,16 +172,53 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Agent:   msg.agent,
 		})
 		a.agentRunning = false
+		a.updateChatPane()
 	}
 
-	// Update text input if focused
-	if a.focusPane == 2 {
-		var cmd tea.Cmd
-		a.input, cmd = a.input.Update(msg)
+	// Update panes
+	if a.state == StateMain {
+		cmd := a.panes.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
+	// Update text input
+	var cmd tea.Cmd
+	a.input, cmd = a.input.Update(msg)
+	cmds = append(cmds, cmd)
+
 	return a, tea.Batch(cmds...)
+}
+
+func (a *App) updateAgentsPane() {
+	content := RenderAgentList(a.agents, a.selectedAgent)
+	a.panes.SetContent(PaneAgents, content)
+}
+
+func (a *App) updateChatPane() {
+	var lines []string
+
+	for _, msg := range a.messages {
+		switch msg.Role {
+		case "user":
+			prefix := lipgloss.NewStyle().Foreground(Blue).Bold(true).Render("You: ")
+			text := lipgloss.NewStyle().Foreground(White).Render(msg.Content)
+			lines = append(lines, prefix+text, "")
+
+		case "assistant":
+			agentStyle := lipgloss.NewStyle().Foreground(Cyan).Bold(true)
+			if msg.Agent != "" {
+				lines = append(lines, agentStyle.Render(msg.Agent+":"))
+			}
+			text := lipgloss.NewStyle().Foreground(Gray300).Render(msg.Content)
+			lines = append(lines, text, "")
+
+		case "system":
+			sysStyle := lipgloss.NewStyle().Foreground(Gray500).Italic(true)
+			lines = append(lines, sysStyle.Render("• "+msg.Content), "")
+		}
+	}
+
+	a.panes.SetContent(PaneChat, strings.Join(lines, "\n"))
 }
 
 type agentResponseMsg struct {
@@ -213,17 +226,14 @@ type agentResponseMsg struct {
 	content string
 }
 
-func (a App) processCommand(cmd string) tea.Cmd {
+func (a *App) processCommand(cmd string) tea.Cmd {
 	a.agentRunning = true
+	agent := a.agents[a.selectedAgent]
 
-	// Simulate processing
-	return tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
-		agent := a.agents[a.activeAgent]
+	return tea.Tick(time.Millisecond*800, func(t time.Time) tea.Msg {
+		response := fmt.Sprintf("Received: %s\n\n⚠️ Provider not configured. Run: goclit config --provider <name>", cmd)
 
-		// Simple command parsing
-		response := fmt.Sprintf("Agent %s received: %s\n\n⚠️ Provider not configured yet.", agent.Name, cmd)
-
-		if strings.HasPrefix(cmd, "ultrawork") {
+		if strings.HasPrefix(strings.ToLower(cmd), "ultrawork") {
 			response = "🚀 ULTRAWORK MODE\n━━━━━━━━━━━━━━━━━━\nAll agents coordinating...\n\n⚠️ Connect a provider first:\ngoclit config --provider claude"
 		}
 
@@ -240,167 +250,121 @@ func (a App) View() string {
 	}
 
 	if a.state == StateIntro {
-		return a.intro.View()
+		return a.renderIntro()
 	}
 
 	return a.renderMain()
 }
 
+func (a App) renderIntro() string {
+	// Animated intro sequence
+	progress := float64(time.Since(a.introTime)) / float64(2500*time.Millisecond)
+
+	var content strings.Builder
+
+	// Phase 1: Black screen (0-0.12)
+	if progress < 0.12 {
+		return lipgloss.NewStyle().
+			Width(a.width).
+			Height(a.height).
+			Background(BgDark).
+			Render("")
+	}
+
+	// Phase 2+: Logo with effects
+	logoColor := Gradient(clamp((progress-0.12)/0.5, 0, 1))
+	logoStyle := lipgloss.NewStyle().
+		Foreground(logoColor).
+		Bold(true)
+
+	// Flicker during early phase
+	showLogo := true
+	if progress < 0.3 && a.introFrame%4 == 0 {
+		showLogo = false
+	}
+
+	logo := []string{
+		"      ★      ",
+		"   ▄▄▄▄▄▄▄   ",
+		"   █ ◉ ◉ █   ",
+		"   █  ▼  █   ",
+		"   █ ╰─╯ █   ",
+		"   ▀▀▀▀▀▀▀   ",
+	}
+
+	// Antenna flicker
+	if progress > 0.3 && progress < 0.5 {
+		if a.introFrame%3 == 0 {
+			logo[0] = "             "
+		}
+	}
+
+	if showLogo {
+		for _, line := range logo {
+			content.WriteString(logoStyle.Render(line) + "\n")
+		}
+	} else {
+		for range logo {
+			content.WriteString("\n")
+		}
+	}
+
+	content.WriteString("\n")
+
+	// Title (letter by letter after 0.5)
+	if progress > 0.5 {
+		title := "G O C L I T"
+		titleProgress := clamp((progress-0.5)/0.2, 0, 1)
+		visibleChars := int(titleProgress * float64(len(title)))
+
+		titleStyle := lipgloss.NewStyle().
+			Foreground(White).
+			Bold(true)
+
+		content.WriteString(titleStyle.Render(title[:visibleChars]))
+		if visibleChars < len(title) && a.introFrame%8 < 4 {
+			content.WriteString("█")
+		}
+		content.WriteString("\n\n")
+	}
+
+	// Tagline (after 0.7)
+	if progress > 0.7 {
+		tagStyle := lipgloss.NewStyle().Foreground(Gray500).Italic(true)
+		content.WriteString(tagStyle.Render("The Dream CLI") + "\n")
+		content.WriteString(lipgloss.NewStyle().Foreground(Cyan).Render("v0.2.0") + "\n\n")
+	}
+
+	// Listening (after 0.85)
+	if progress > 0.85 {
+		sparkles := []string{"✨", "⚡", "💫", "🌟"}
+		s := sparkles[a.introFrame/3%len(sparkles)]
+		listenStyle := lipgloss.NewStyle().Foreground(Cyan)
+		content.WriteString(listenStyle.Render(s+" Agents are listening... "+s))
+	}
+
+	centered := lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, content.String())
+	return lipgloss.NewStyle().
+		Width(a.width).
+		Height(a.height).
+		Background(BgDark).
+		Render(centered)
+}
+
 func (a App) renderMain() string {
-	var b strings.Builder
-
-	// Header
-	header := a.renderHeader()
-	b.WriteString(header + "\n")
-
-	// Calculate dimensions
-	contentHeight := a.height - 5 // Header + status bar + padding
-	agentsPaneWidth := 24
-	chatPaneWidth := a.width - agentsPaneWidth - 4
+	var sections []string
 
 	// Panes
-	agentsPane := a.renderAgentsPane(agentsPaneWidth, contentHeight)
-	chatPane := a.renderChatPane(chatPaneWidth, contentHeight)
-
-	panes := lipgloss.JoinHorizontal(lipgloss.Top, agentsPane, " ", chatPane)
-	b.WriteString(panes + "\n")
+	sections = append(sections, a.panes.View())
 
 	// Input bar
-	inputBar := a.renderInputBar()
-	b.WriteString(inputBar)
+	sections = append(sections, a.renderInputBar())
 
 	return lipgloss.NewStyle().
 		Width(a.width).
 		Height(a.height).
 		Background(BgDark).
-		Render(b.String())
-}
-
-func (a App) renderHeader() string {
-	logo := lipgloss.NewStyle().
-		Foreground(Cyan).
-		Bold(true).
-		Render("⚡ GOCLIT")
-
-	ver := lipgloss.NewStyle().
-		Foreground(Gray500).
-		Render(" v0.2.0")
-
-	status := ""
-	if a.agentRunning {
-		status = a.spinner.View() + " Running..."
-	}
-
-	right := lipgloss.NewStyle().
-		Foreground(Cyan).
-		Render(status)
-
-	gap := a.width - lipgloss.Width(logo+ver) - lipgloss.Width(right) - 4
-	if gap < 0 {
-		gap = 1
-	}
-
-	return lipgloss.NewStyle().
-		Width(a.width).
-		Background(BgHighlight).
-		Padding(0, 1).
-		Render(logo + ver + strings.Repeat(" ", gap) + right)
-}
-
-func (a App) renderAgentsPane(width, height int) string {
-	var content strings.Builder
-
-	title := lipgloss.NewStyle().
-		Foreground(White).
-		Bold(true).
-		Render("AGENTS")
-
-	content.WriteString(title + "\n\n")
-
-	for i, agent := range a.agents {
-		isActive := i == a.activeAgent
-		isFocused := a.focusPane == 0
-
-		// Icon with color
-		iconStyle := lipgloss.NewStyle().MarginRight(1)
-		if isActive && isFocused {
-			iconStyle = iconStyle.Background(agent.Color).Foreground(Black)
-		}
-		icon := iconStyle.Render(agent.Icon)
-
-		// Name
-		nameStyle := lipgloss.NewStyle().Foreground(Gray300)
-		if isActive {
-			nameStyle = nameStyle.Foreground(White).Bold(true)
-		}
-		name := nameStyle.Render(agent.Name)
-
-		// Cursor
-		cursor := "  "
-		if isActive {
-			cursor = lipgloss.NewStyle().Foreground(Cyan).Render("▸ ")
-		}
-
-		content.WriteString(cursor + icon + name + "\n")
-	}
-
-	// Add help at bottom
-	content.WriteString("\n\n")
-	helpStyle := lipgloss.NewStyle().Foreground(Gray500).Italic(true)
-	content.WriteString(helpStyle.Render("↑↓ select\n⏎  activate"))
-
-	style := PanelStyle.Width(width).Height(height)
-	if a.focusPane == 0 {
-		style = ActivePanelStyle.Width(width).Height(height)
-	}
-
-	return style.Render(content.String())
-}
-
-func (a App) renderChatPane(width, height int) string {
-	var content strings.Builder
-
-	title := lipgloss.NewStyle().
-		Foreground(White).
-		Bold(true).
-		Render("CHAT")
-
-	content.WriteString(title + "\n\n")
-
-	// Render messages (last N that fit)
-	maxMessages := height - 6
-	start := 0
-	if len(a.messages) > maxMessages {
-		start = len(a.messages) - maxMessages
-	}
-
-	for _, msg := range a.messages[start:] {
-		switch msg.Role {
-		case "user":
-			prefix := lipgloss.NewStyle().Foreground(Blue).Bold(true).Render("You: ")
-			text := lipgloss.NewStyle().Foreground(White).Render(msg.Content)
-			content.WriteString(prefix + text + "\n\n")
-
-		case "assistant":
-			agentStyle := lipgloss.NewStyle().Foreground(Cyan).Bold(true)
-			if msg.Agent != "" {
-				content.WriteString(agentStyle.Render(msg.Agent+": "))
-			}
-			text := lipgloss.NewStyle().Foreground(Gray300).Render(msg.Content)
-			content.WriteString(text + "\n\n")
-
-		case "system":
-			sysStyle := lipgloss.NewStyle().Foreground(Gray500).Italic(true)
-			content.WriteString(sysStyle.Render("• "+msg.Content) + "\n\n")
-		}
-	}
-
-	style := PanelStyle.Width(width).Height(height)
-	if a.focusPane == 1 {
-		style = ActivePanelStyle.Width(width).Height(height)
-	}
-
-	return style.Render(content.String())
+		Render(lipgloss.JoinVertical(lipgloss.Left, sections...))
 }
 
 func (a App) renderInputBar() string {
@@ -409,15 +373,21 @@ func (a App) renderInputBar() string {
 		Bold(true).
 		Render("❯ ")
 
-	inputStyle := InputStyle.Width(a.width - 6)
-	if a.focusPane == 2 {
-		inputStyle = inputStyle.BorderForeground(Cyan)
+	status := ""
+	if a.agentRunning {
+		status = a.spinner.View() + " "
 	}
+
+	inputStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(Cyan).
+		Width(a.width - 6).
+		Padding(0, 1)
 
 	return lipgloss.NewStyle().
 		Width(a.width).
 		Padding(0, 1).
-		Render(prompt + inputStyle.Render(a.input.View()))
+		Render(status + prompt + inputStyle.Render(a.input.View()))
 }
 
 // Run starts the TUI application
