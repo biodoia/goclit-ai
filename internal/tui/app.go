@@ -308,7 +308,7 @@ func (a App) renderIntro() string {
 			Render("")
 	}
 
-	// Phase 2+: Logo with effects
+	// Phase 2+: Logo with effects (Gopilot style)
 	logoColor := Gradient(clamp((progress-0.12)/0.5, 0, 1))
 	logoStyle := lipgloss.NewStyle().
 		Foreground(logoColor).
@@ -329,8 +329,8 @@ func (a App) renderIntro() string {
 		"   ▀▀▀▀▀▀▀   ",
 	}
 
-	// Antenna flicker
-	if progress > 0.3 && progress < 0.5 {
+	// Antenna flicker (longer phase)
+	if progress > 0.3 && progress < 0.6 {
 		if a.introFrame%3 == 0 {
 			logo[0] = "             "
 		}
@@ -348,32 +348,10 @@ func (a App) renderIntro() string {
 
 	content.WriteString("\n")
 
-	// Title (letter by letter after 0.5)
-	if progress > 0.5 {
-		title := "G O C L I T"
-		titleProgress := clamp((progress-0.5)/0.2, 0, 1)
-		visibleChars := int(titleProgress * float64(len(title)))
+	// NO title here - it goes in the panes header
 
-		titleStyle := lipgloss.NewStyle().
-			Foreground(White).
-			Bold(true)
-
-		content.WriteString(titleStyle.Render(title[:visibleChars]))
-		if visibleChars < len(title) && a.introFrame%8 < 4 {
-			content.WriteString("█")
-		}
-		content.WriteString("\n\n")
-	}
-
-	// Tagline (after 0.7)
-	if progress > 0.7 {
-		tagStyle := lipgloss.NewStyle().Foreground(Gray500).Italic(true)
-		content.WriteString(tagStyle.Render("The Dream CLI") + "\n")
-		content.WriteString(lipgloss.NewStyle().Foreground(Cyan).Render("v0.2.0") + "\n\n")
-	}
-
-	// Listening (after 0.85)
-	if progress > 0.85 {
+	// Listening (after 0.65)
+	if progress > 0.65 {
 		sparkles := []string{"✨", "⚡", "💫", "🌟"}
 		s := sparkles[a.introFrame/3%len(sparkles)]
 		listenStyle := lipgloss.NewStyle().Foreground(Cyan)

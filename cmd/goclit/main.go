@@ -256,29 +256,26 @@ func playAnimatedBanner() {
 	}
 	fmt.Println()
 
-	// Phase 4: GOCLIT letter by letter (500ms)
-	title := "G O C L I T"
-	fmt.Print("        ")
-	for _, ch := range title {
-		fmt.Print(white + string(ch) + reset)
-		time.Sleep(50 * time.Millisecond)
-	}
-	fmt.Println()
-	time.Sleep(100 * time.Millisecond)
-
-	// Phase 5: Tagline
-	fmt.Println(dim + "        The Dream CLI" + reset)
-	fmt.Println(cyan + "        v" + version + reset)
-	fmt.Println()
-
-	// Phase 6: Agents listening with sparkle
+	// Agents listening with sparkle (NO title yet - Gopilot style)
 	sparkles := []string{"✨", "⚡", "💫", "🌟"}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		s := sparkles[i%len(sparkles)]
 		fmt.Print("\r        " + s + " Agents are listening... " + s + "  ")
 		time.Sleep(150 * time.Millisecond)
 	}
 	fmt.Println()
+	fmt.Println()
+
+	// NOW the title appears (after animation)
+	fmt.Print("        ")
+	title := "G O C L I T"
+	for _, ch := range title {
+		fmt.Print(white + string(ch) + reset)
+		time.Sleep(40 * time.Millisecond)
+	}
+	fmt.Println()
+	fmt.Println(dim + "        The Dream CLI" + reset)
+	fmt.Println(cyan + "        v" + version + reset)
 	fmt.Println()
 }
 
