@@ -19,17 +19,12 @@ func NewLayout() (bl.BubbleLayout, LayoutIDs) {
 
 	ids := LayoutIDs{}
 
-	// Header spans full width, fixed height
-	ids.Header = layout.Add("dock north, height 1")
-
-	// Agents pane - left side, 25% width
-	ids.Agents = layout.Add("width 25%, grow y")
+	// Simple 2-column layout
+	// Agents pane - left side, fixed width
+	ids.Agents = layout.Add("width 25")
 
 	// Chat pane - right side, grows to fill
-	ids.Chat = layout.Add("grow, wrap")
-
-	// Input bar - bottom, fixed height
-	ids.Input = layout.Add("dock south, height 3")
+	ids.Chat = layout.Add("grow")
 
 	return layout, ids
 }

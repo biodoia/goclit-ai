@@ -81,6 +81,16 @@ func NewClient(cfg Config) *Client {
 		if c.model == "" {
 			c.model = "anthropic/claude-sonnet-4"
 		}
+	case ProviderOpenAI:
+		c.baseURL = "https://api.openai.com/v1"
+		if c.model == "" {
+			c.model = "gpt-4o-mini"
+		}
+	case ProviderGoogle:
+		c.baseURL = "https://generativelanguage.googleapis.com/v1beta"
+		if c.model == "" {
+			c.model = "gemini-2.0-flash"
+		}
 	case ProviderGoBro:
 		c.baseURL = "http://localhost:8080/v1"
 		if c.model == "" {
@@ -91,7 +101,7 @@ func NewClient(cfg Config) *Client {
 		if c.model == "" {
 			c.model = "llama3"
 		}
-	case ProviderClaude:
+	case ProviderClaude, ProviderAnthropic:
 		c.baseURL = "https://api.anthropic.com/v1"
 		if c.model == "" {
 			c.model = "claude-sonnet-4-20250514"
@@ -107,7 +117,7 @@ func NewClient(cfg Config) *Client {
 
 // AutoDetect finds the best available provider
 func AutoDetect() (*Client, error) {
-	// Priority: OpenRouter > Claude > GoBro > Ollama
+	// Priority: OpenRouter > Claude > OpenAI > Gemini > GoBro > Ollama
 
 	// Check OpenRouter
 	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
@@ -125,6 +135,24 @@ func AutoDetect() (*Client, error) {
 		}), nil
 	}
 
+	// Check OpenAI
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		return NewClient(Config{
+			Provider: ProviderOpenAI,
+			APIKey:   key,
+			Model:    "gpt-4o-mini",
+		}), nil
+	}
+
+	// Check Gemini
+	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
+		return NewClient(Config{
+			Provider: ProviderGoogle,
+			APIKey:   key,
+			Model:    "gemini-2.0-flash",
+		}), nil
+	}
+
 	// Check GoBro local
 	if isReachable("http://localhost:8080/health") {
 		return NewClient(Config{
@@ -139,7 +167,7 @@ func AutoDetect() (*Client, error) {
 		}), nil
 	}
 
-	return nil, fmt.Errorf("no provider available. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or start GoBro/Ollama")
+	return nil, fmt.Errorf("no provider available. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or start GoBro/Ollama")
 }
 
 func isReachable(url string) bool {
@@ -286,11 +314,15 @@ func (c *Client) ProviderName() string {
 	switch c.providerType {
 	case ProviderOpenRouter:
 		return "OpenRouter"
+	case ProviderOpenAI:
+		return "OpenAI"
+	case ProviderGoogle:
+		return "Gemini"
 	case ProviderGoBro:
 		return "GoBro"
 	case ProviderOllama:
 		return "Ollama"
-	case ProviderClaude:
+	case ProviderClaude, ProviderAnthropic:
 		return "Claude"
 	default:
 		return string(c.providerType)
