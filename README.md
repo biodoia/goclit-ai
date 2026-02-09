@@ -1,11 +1,11 @@
-# 🚀 goclitait
+# 🚀 goclit
 
 > **Go CLI Tight** - The Dream Coding Agent
 > Synthesis of 65 CLI tools into one supreme tool
 
 ## Vision
 
-goclitait combines the best features from 65+ coding CLI tools:
+goclit combines the best features from 65+ coding CLI tools:
 
 | Feature | Source |
 |---------|--------|
@@ -23,7 +23,7 @@ goclitait combines the best features from 65+ coding CLI tools:
 ## Installation
 
 ```bash
-go install github.com/biodoia/goclitait/cmd/goclitait@latest
+go install github.com/biodoia/goclit/cmd/goclit@latest
 ```
 
 ## Status
