@@ -8,8 +8,10 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	bl "github.com/winder/bubblelayout"
 )
 
 // AppState represents the current state
@@ -37,18 +39,26 @@ type App struct {
 	introTime time.Time
 	introFrame int
 
-	// Pane layout
-	panes *PaneLayout
+	// Layout (bubblelayout)
+	layout    bl.BubbleLayout
+	layoutIDs LayoutIDs
+
+	// Viewports for panes
+	agentsVP viewport.Model
+	chatVP   viewport.Model
+
+	// Focus
+	focusedPane int // 0=agents, 1=chat
 
 	// Input
 	input   textinput.Model
 	spinner spinner.Model
 
 	// Data
-	messages     []Message
-	agents       []AgentItem
+	messages      []Message
+	agents        []AgentItem
 	selectedAgent int
-	agentRunning bool
+	agentRunning  bool
 }
 
 func NewApp() App {
@@ -64,10 +74,17 @@ func NewApp() App {
 	s.Spinner = spinner.Dot
 	s.Style = SpinnerStyle
 
+	// Layout with bubblelayout
+	layout, ids := NewLayout()
+
 	return App{
 		state:     StateIntro,
 		introTime: time.Now(),
-		panes:     NewPaneLayout(),
+		layout:    layout,
+		layoutIDs: ids,
+		agentsVP:  viewport.New(0, 0),
+		chatVP:    viewport.New(0, 0),
+		focusedPane: 1, // Start on chat
 		input:     ti,
 		spinner:   s,
 		agents:    DefaultAgents(),
@@ -98,24 +115,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "tab":
 			if a.state == StateMain {
-				a.panes.FocusNext()
+				a.focusedPane = (a.focusedPane + 1) % 2
 			}
 		case "shift+tab":
 			if a.state == StateMain {
-				a.panes.FocusPrev()
+				a.focusedPane = (a.focusedPane + 1) % 2
 			}
 		case "up", "k":
-			if a.panes.focusedPane == PaneAgents && a.selectedAgent > 0 {
+			if a.focusedPane == 0 && a.selectedAgent > 0 {
 				a.selectedAgent--
 				a.updateAgentsPane()
 			}
 		case "down", "j":
-			if a.panes.focusedPane == PaneAgents && a.selectedAgent < len(a.agents)-1 {
+			if a.focusedPane == 0 && a.selectedAgent < len(a.agents)-1 {
 				a.selectedAgent++
 				a.updateAgentsPane()
 			}
 		case "enter":
-			if a.panes.focusedPane == PaneChat && a.input.Value() != "" {
+			if a.focusedPane == 1 && a.input.Value() != "" {
 				userMsg := a.input.Value()
 				a.messages = append(a.messages, Message{
 					Role:    "user",
@@ -131,20 +148,33 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Skip intro on any key
 		if a.state == StateIntro {
 			a.state = StateMain
-			a.panes.SetSize(a.width, a.height-3) // Reserve space for input
-			a.updateAgentsPane()
-			a.updateChatPane()
+			// Trigger resize to update layout
+			return a, func() tea.Msg {
+				return a.layout.Resize(a.width, a.height)
+			}
 		}
 
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
 		a.input.Width = msg.Width - 6
-		if a.state == StateMain {
-			a.panes.SetSize(a.width, a.height-3)
-			a.updateAgentsPane()
-			a.updateChatPane()
+		// Convert to bubblelayout message
+		return a, func() tea.Msg {
+			return a.layout.Resize(msg.Width, msg.Height)
 		}
+
+	case bl.BubbleLayoutMsg:
+		// Update component sizes from layout
+		if sz, err := msg.Size(a.layoutIDs.Agents); err == nil {
+			a.agentsVP.Width = sz.Width - 4
+			a.agentsVP.Height = sz.Height - 2
+		}
+		if sz, err := msg.Size(a.layoutIDs.Chat); err == nil {
+			a.chatVP.Width = sz.Width - 4
+			a.chatVP.Height = sz.Height - 2
+		}
+		a.updateAgentsPane()
+		a.updateChatPane()
 
 	case tickMsg:
 		a.introFrame++
@@ -152,9 +182,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			elapsed := time.Since(a.introTime)
 			if elapsed > 2500*time.Millisecond {
 				a.state = StateMain
-				a.panes.SetSize(a.width, a.height-3)
-				a.updateAgentsPane()
-				a.updateChatPane()
+				// Trigger resize to update layout
+				return a, func() tea.Msg {
+					return a.layout.Resize(a.width, a.height)
+				}
 			}
 		}
 		cmds = append(cmds, tick())
@@ -175,9 +206,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.updateChatPane()
 	}
 
-	// Update panes
+	// Update viewports
 	if a.state == StateMain {
-		cmd := a.panes.Update(msg)
+		var cmd tea.Cmd
+		if a.focusedPane == 0 {
+			a.agentsVP, cmd = a.agentsVP.Update(msg)
+		} else {
+			a.chatVP, cmd = a.chatVP.Update(msg)
+		}
 		cmds = append(cmds, cmd)
 	}
 
@@ -191,7 +227,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) updateAgentsPane() {
 	content := RenderAgentList(a.agents, a.selectedAgent)
-	a.panes.SetContent(PaneAgents, content)
+	a.agentsVP.SetContent(content)
 }
 
 func (a *App) updateChatPane() {
@@ -218,7 +254,8 @@ func (a *App) updateChatPane() {
 		}
 	}
 
-	a.panes.SetContent(PaneChat, strings.Join(lines, "\n"))
+	a.chatVP.SetContent(strings.Join(lines, "\n"))
+	a.chatVP.GotoBottom()
 }
 
 type agentResponseMsg struct {
@@ -354,8 +391,11 @@ func (a App) renderIntro() string {
 func (a App) renderMain() string {
 	var sections []string
 
+	// Header
+	sections = append(sections, a.renderHeader())
+
 	// Panes
-	sections = append(sections, a.panes.View())
+	sections = append(sections, a.renderPanes())
 
 	// Input bar
 	sections = append(sections, a.renderInputBar())
@@ -365,6 +405,71 @@ func (a App) renderMain() string {
 		Height(a.height).
 		Background(BgDark).
 		Render(lipgloss.JoinVertical(lipgloss.Left, sections...))
+}
+
+func (a App) renderHeader() string {
+	logo := lipgloss.NewStyle().
+		Foreground(Cyan).
+		Bold(true).
+		Render("⚡ GOCLIT")
+
+	ver := lipgloss.NewStyle().
+		Foreground(Gray500).
+		Render(" v0.2.0")
+
+	return lipgloss.NewStyle().
+		Width(a.width).
+		Background(BgHighlight).
+		Padding(0, 1).
+		Render(logo + ver)
+}
+
+func (a App) renderPanes() string {
+	// Agents pane
+	agentsBorder := Gray700
+	if a.focusedPane == 0 {
+		agentsBorder = Cyan
+	}
+
+	agentsTitle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(White).
+		Render("AGENTS")
+
+	if a.focusedPane == 0 {
+		agentsTitle = lipgloss.NewStyle().Bold(true).Foreground(Cyan).Render("AGENTS")
+	}
+
+	agentsPane := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(agentsBorder).
+		Width(a.agentsVP.Width + 4).
+		Height(a.agentsVP.Height + 3).
+		Render(agentsTitle + "\n\n" + a.agentsVP.View())
+
+	// Chat pane
+	chatBorder := Gray700
+	if a.focusedPane == 1 {
+		chatBorder = Cyan
+	}
+
+	chatTitle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(White).
+		Render("CHAT")
+
+	if a.focusedPane == 1 {
+		chatTitle = lipgloss.NewStyle().Bold(true).Foreground(Cyan).Render("CHAT")
+	}
+
+	chatPane := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(chatBorder).
+		Width(a.chatVP.Width + 4).
+		Height(a.chatVP.Height + 3).
+		Render(chatTitle + "\n\n" + a.chatVP.View())
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, agentsPane, " ", chatPane)
 }
 
 func (a App) renderInputBar() string {
