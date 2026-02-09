@@ -86,12 +86,12 @@ Provide:
 
 	// Phase 2: Librarian gathers context
 	u.log("Librarian", "gathering context", "")
-	context, err := u.librarian.Search(ctx, "Find relevant code, docs, and examples for: "+task)
+	libContext, err := u.librarian.Search(ctx, "Find relevant code, docs, and examples for: "+task)
 	if err != nil {
 		// Non-fatal - continue without context
-		context = "No additional context found"
+		libContext = "No additional context found"
 	}
-	u.log("Librarian", "context gathered", context[:min(200, len(context))])
+	u.log("Librarian", "context gathered", libContext[:min(200, len(libContext))])
 
 	// Phase 3: Start Hephaestus for background work
 	hephaestusCtx, cancelHephaestus := context.WithCancel(ctx)
@@ -125,7 +125,7 @@ Execute this task completely. Do not stop until done.
 Delegate to specialists when appropriate.
 Use DELEGATE:[agent] to assign subtasks.
 
-Begin:`, task, analysis, context)
+Begin:`, task, analysis, libContext)
 
 	// Configure Sisyphus with progress reporting
 	progressCh := make(chan agents.Progress, 100)
