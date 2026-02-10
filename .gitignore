@@ -1,0 +1,12 @@
+# Binaries (root only)
+/goclit
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Temp
+tmp/
+*.tmp
