@@ -1,8 +1,8 @@
-// Intro animation - Logo with flicker effect
+// Intro animation - BETTER than Copilot CLI
+// Features: Glitch reveal, scan line, eye fly-in, sparkles, gradient
 package tui
 
 import (
-	"math"
 	"math/rand"
 	"strings"
 	"time"
@@ -12,71 +12,152 @@ import (
 )
 
 const (
-	animationDuration = 2500 * time.Millisecond
-	fps               = 30
-	frameTime         = time.Second / fps
+	fps       = 30
+	frameTime = time.Second / fps
 )
 
-// Terminal Eye logo - AI che vede il codice
-var robotLogo = []string{
-	"             ",
-	" ╭─────────╮ ",
-	" │  ◉   ◉  │ ",
-	" │    ▼    │ ",
-	" │  ╰───╯  │ ",
-	" ╰─────────╯ ",
+// Animation timeline (milliseconds) - precise timing like Copilot
+const (
+	// Phase 0: Glitch matrix
+	tGlitchStart = 0
+	tGlitchEnd   = 400
+
+	// Phase 1: Scan line reveal logo
+	tRevealStart = 400
+	tRevealEnd   = 1200
+
+	// Phase 2: Eye fly-in
+	tEyeStart = 800
+	tEyeEnd   = 1800
+
+	// Phase 3: Sparkle celebration
+	tSparkleStart = 1600
+	tSparkleEnd   = 2400
+
+	// Phase 4: Stable (hold)
+	tStableStart = 2400
+	tTotalTime   = 3000 // 3 seconds total
+)
+
+// Color palette - semantic roles
+var (
+	colPrimary   = lipgloss.Color("#A855F7") // Purple
+	colSecondary = lipgloss.Color("#06B6D4") // Cyan
+	colAccent    = lipgloss.Color("#3B82F6") // Blue
+	colHighlight = lipgloss.Color("#F59E0B") // Amber
+	colGlow      = lipgloss.Color("#22D3EE") // Bright cyan
+	colEye       = lipgloss.Color("#10B981") // Emerald
+	colShadow    = lipgloss.Color("#6366F1") // Indigo
+	colWhite     = lipgloss.Color("#F8FAFC")
+	colDim       = lipgloss.Color("#64748B")
+)
+
+// Main GOCLIT logo
+var mainLogo = []string{
+	"  ██████╗  ██████╗  ██████╗██╗     ██╗████████╗",
+	" ██╔════╝ ██╔═══██╗██╔════╝██║     ██║╚══██╔══╝",
+	" ██║  ███╗██║   ██║██║     ██║     ██║   ██║   ",
+	" ██║   ██║██║   ██║██║     ██║     ██║   ██║   ",
+	" ╚██████╔╝╚██████╔╝╚██████╗███████╗██║   ██║   ",
+	"  ╚═════╝  ╚═════╝  ╚═════╝╚══════╝╚═╝   ╚═╝   ",
 }
 
-// Blinking eye animation frames
-var robotLogoNoAntenna = []string{
-	"             ",
-	" ╭─────────╮ ",
-	" │  ─   ─  │ ",
-	" │    ▼    │ ",
-	" │  ╰───╯  │ ",
-	" ╰─────────╯ ",
-}
-
-// Eye scanning animation
+// Terminal Eye frames
 var eyeFrames = [][]string{
-	{" ◉   ◉ "}, // center
-	{" ◉  ◉  "}, // left
-	{"  ◉   ◉"}, // right
-	{" ◉   ◉ "}, // center
-	{" ─   ─ "}, // blink
+	{ // Center
+		"╭─────────╮",
+		"│  ◉   ◉  │",
+		"│    ▼    │",
+		"│  ╰───╯  │",
+		"╰─────────╯",
+	},
+	{ // Left
+		"╭─────────╮",
+		"│ ◉   ◉   │",
+		"│    ▼    │",
+		"│  ╰───╯  │",
+		"╰─────────╯",
+	},
+	{ // Right
+		"╭─────────╮",
+		"│   ◉   ◉ │",
+		"│    ▼    │",
+		"│  ╰───╯  │",
+		"╰─────────╯",
+	},
+	{ // Blink
+		"╭─────────╮",
+		"│  ─   ─  │",
+		"│    ▼    │",
+		"│  ╰───╯  │",
+		"╰─────────╯",
+	},
+	{ // Wide (excited)
+		"╭─────────╮",
+		"│  ⊙   ⊙  │",
+		"│    ▼    │",
+		"│  ╰◡─◡╯  │",
+		"╰─────────╯",
+	},
 }
 
-const goclitText = "G O C L I T"
+// Glitch characters
+var glitchChars = []rune{'░', '▒', '▓', '█', '▀', '▄', '▌', '▐', '■', '□', '▪', '▫', '◢', '◣', '◤', '◥'}
+
+// Sparkle characters
+var sparkles = []string{"✦", "✧", "⋆", "✨", "⭐", "✴", "★", "☆", "·", "°"}
+
 const tagline = "The Dream CLI"
-const listening = "✨ Agents are listening... ✨"
 const version = "v0.2.0"
+
+// Sparkle particle
+type Sparkle struct {
+	x, y   float64
+	vx, vy float64
+	char   string
+	life   int
+}
 
 // IntroModel handles the intro animation
 type IntroModel struct {
-	width     int
-	height    int
-	startTime time.Time
-	progress  float64
-	done      bool
-	showPanes bool
-	frame     int
+	width      int
+	height     int
+	startTime  time.Time
+	frame      int
+	phase      int // 0=glitch, 1=scanReveal, 2=eyeFlyIn, 3=sparkle, 4=done
+	eyeX       float64
+	eyeFrame   int
+	revealCol  int
+	glitchMap  [][]rune
+	particles  []Sparkle
+	done       bool
+	showPanes  bool
 }
 
 type tickMsg time.Time
 
 func NewIntro(width, height int) IntroModel {
+	// Initialize glitch
+	glitch := make([][]rune, 8)
+	for i := range glitch {
+		glitch[i] = make([]rune, 50)
+		for j := range glitch[i] {
+			glitch[i][j] = glitchChars[rand.Intn(len(glitchChars))]
+		}
+	}
+
 	return IntroModel{
 		width:     width,
 		height:    height,
 		startTime: time.Now(),
+		eyeX:      70, // Start off-screen
+		glitchMap: glitch,
+		particles: make([]Sparkle, 0),
 	}
 }
 
 func (m IntroModel) Init() tea.Cmd {
-	return tea.Batch(
-		tick(),
-		tea.EnterAltScreen,
-	)
+	return tea.Batch(tick(), tea.EnterAltScreen)
 }
 
 func tick() tea.Cmd {
@@ -88,12 +169,10 @@ func tick() tea.Cmd {
 func (m IntroModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if !m.done {
-			m.done = true
-			m.showPanes = true
-			return m, nil
-		}
-		return m, tea.Quit
+		// Skip on any key
+		m.done = true
+		m.showPanes = true
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -102,13 +181,96 @@ func (m IntroModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.frame++
 		elapsed := time.Since(m.startTime)
-		m.progress = float64(elapsed) / float64(animationDuration)
+		ms := elapsed.Milliseconds() // Precise milliseconds
 
-		if m.progress >= 1.0 {
-			m.progress = 1.0
+		// Phase transitions based on exact timing
+		switch {
+		case ms < tGlitchEnd:
+			m.phase = 0 // Glitch
+		case ms < tRevealEnd:
+			m.phase = 1 // Scan reveal
+		case ms < tEyeEnd:
+			m.phase = 2 // Eye fly-in
+		case ms < tSparkleEnd:
+			m.phase = 3 // Sparkle celebration
+		default:
+			m.phase = 4 // Stable
+		}
+
+		// Update glitch characters
+		if m.phase == 0 {
+			for i := range m.glitchMap {
+				for j := range m.glitchMap[i] {
+					if rand.Float64() < 0.4 {
+						m.glitchMap[i][j] = glitchChars[rand.Intn(len(glitchChars))]
+					}
+				}
+			}
+		}
+
+		// Update scan reveal (linear from tRevealStart to tRevealEnd)
+		if ms >= tRevealStart {
+			revealProgress := float64(ms-tRevealStart) / float64(tRevealEnd-tRevealStart)
+			if revealProgress > 1 {
+				revealProgress = 1
+			}
+			m.revealCol = int(revealProgress * 50)
+		}
+
+		// Update eye fly-in (ease-out cubic)
+		if ms >= tEyeStart {
+			eyeProgress := float64(ms-tEyeStart) / float64(tEyeEnd-tEyeStart)
+			if eyeProgress > 1 {
+				eyeProgress = 1
+			}
+			// Ease-out cubic: 1 - (1-t)^3
+			eased := 1 - (1-eyeProgress)*(1-eyeProgress)*(1-eyeProgress)
+			targetX := 52.0
+			startX := 70.0
+			m.eyeX = startX + (targetX-startX)*eased
+		}
+
+		// Update eye animation
+		if m.frame%8 == 0 {
+			choices := []int{0, 0, 0, 1, 2} // Mostly center
+			m.eyeFrame = choices[rand.Intn(len(choices))]
+		}
+		if m.frame%50 == 0 {
+			m.eyeFrame = 3 // Blink
+		}
+		if m.phase == 3 && m.frame%30 == 0 {
+			m.eyeFrame = 4 // Excited!
+		}
+
+		// Spawn sparkles
+		if m.phase == 3 && m.frame%2 == 0 {
+			m.particles = append(m.particles, Sparkle{
+				x:    m.eyeX + 5 + rand.Float64()*3,
+				y:    8 + rand.Float64()*2,
+				vx:   (rand.Float64() - 0.5) * 3,
+				vy:   -rand.Float64()*2 - 0.5,
+				char: sparkles[rand.Intn(len(sparkles))],
+				life: 0,
+			})
+		}
+
+		// Update sparkles
+		alive := make([]Sparkle, 0)
+		for _, p := range m.particles {
+			p.x += p.vx
+			p.y += p.vy
+			p.vy += 0.15 // Gravity
+			p.life++
+			if p.life < 20 && p.y < float64(m.height) && p.y > 0 {
+				alive = append(alive, p)
+			}
+		}
+		m.particles = alive
+
+		// Check done (after total time)
+		if ms >= tTotalTime {
 			m.done = true
 			m.showPanes = true
-			return m, nil
 		}
 
 		return m, tick()
@@ -118,276 +280,163 @@ func (m IntroModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m IntroModel) View() string {
-	if m.width == 0 || m.height == 0 {
-		return ""
-	}
-
-	if m.showPanes {
-		return m.renderWithPanes()
-	}
-
-	return m.renderAnimation()
-}
-
-func (m IntroModel) renderAnimation() string {
-	// Phases:
-	// 0.00-0.15: Black screen
-	// 0.15-0.35: Logo fades in with flicker
-	// 0.35-0.55: Antenna flickers
-	// 0.55-0.75: GOCLIT appears letter by letter
-	// 0.75-0.90: Tagline fades in
-	// 0.90-1.00: "Agents are listening" appears
-
-	var content strings.Builder
-
-	// Background style
-	bgStyle := lipgloss.NewStyle().
-		Width(m.width).
-		Height(m.height).
-		Background(BgDark).
-		Align(lipgloss.Center, lipgloss.Center)
-
-	// Phase 1: Black screen (0.00-0.15)
-	if m.progress < 0.15 {
-		return bgStyle.Render("")
-	}
-
-	// Phase 2: Logo with flicker (0.15-0.35)
-	logoVisible := true
-	if m.progress >= 0.15 && m.progress < 0.35 {
-		// Random flicker during fade-in
-		flickerChance := 0.3 - (m.progress-0.15)*1.5 // Decreases over time
-		if rand.Float64() < flickerChance {
-			logoVisible = false
-		}
-	}
-
-	// Phase 3: Antenna flicker (0.35-0.55)
-	antennaOn := true
-	if m.progress >= 0.35 && m.progress < 0.55 {
-		// Antenna flickers rapidly
-		flickerSpeed := 8.0
-		antennaOn = int(m.progress*flickerSpeed*10)%2 == 0
-	}
-
-	// Render logo
-	if logoVisible && m.progress >= 0.15 {
-		logoColor := Gradient(clamp((m.progress-0.15)/0.4, 0, 1))
-		logoStyle := lipgloss.NewStyle().
-			Foreground(logoColor).
-			Bold(true)
-
-		var logo []string
-		if antennaOn {
-			logo = robotLogo
-		} else {
-			logo = robotLogoNoAntenna
-		}
-
-		for _, line := range logo {
-			// Glitch effect during flicker phase
-			if m.progress < 0.35 && rand.Float64() < 0.1 {
-				line = glitchLine(line)
-			}
-			content.WriteString(logoStyle.Render(line) + "\n")
-		}
-		content.WriteString("\n")
-	}
-
-	// Phase 4: GOCLIT letter by letter (0.55-0.75)
-	if m.progress >= 0.55 {
-		titleProgress := clamp((m.progress-0.55)/0.20, 0, 1)
-		visibleChars := int(titleProgress * float64(len(goclitText)))
-
-		titleStyle := lipgloss.NewStyle().
-			Foreground(White).
-			Bold(true)
-
-		visibleText := goclitText[:visibleChars]
-
-		// Cursor blink at end
-		if visibleChars < len(goclitText) && m.frame%10 < 5 {
-			visibleText += "█"
-		}
-
-		content.WriteString(titleStyle.Render(visibleText) + "\n\n")
-	}
-
-	// Phase 5: Tagline (0.75-0.90)
-	if m.progress >= 0.75 {
-		taglineOpacity := easeOutExpo(clamp((m.progress-0.75)/0.15, 0, 1))
-		taglineStyle := lipgloss.NewStyle().
-			Foreground(Gray500).
-			Italic(true)
-
-		if taglineOpacity > 0.3 {
-			content.WriteString(taglineStyle.Render(tagline) + "\n")
-			content.WriteString(lipgloss.NewStyle().Foreground(Cyan).Render(version) + "\n\n")
-		}
-	}
-
-	// Phase 6: Agents listening (0.90-1.00)
-	if m.progress >= 0.90 {
-		listenOpacity := easeOutExpo(clamp((m.progress-0.90)/0.10, 0, 1))
-		listenStyle := lipgloss.NewStyle().
-			Foreground(Cyan)
-
-		if listenOpacity > 0.3 {
-			// Sparkle animation
-			sparkles := []string{"✨", "⚡", "💫", "🌟"}
-			sparkleIdx := m.frame / 5 % len(sparkles)
-			text := strings.Replace(listening, "✨", sparkles[sparkleIdx], 2)
-			content.WriteString(listenStyle.Render(text))
-		}
-	}
-
-	centered := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content.String())
-	return bgStyle.Render(centered)
-}
-
-func glitchLine(line string) string {
-	// Add random glitch characters
-	runes := []rune(line)
-	glitchChars := []rune{'█', '▓', '▒', '░', '▀', '▄', '│', '─'}
-
-	for i := range runes {
-		if rand.Float64() < 0.2 && runes[i] != ' ' {
-			runes[i] = glitchChars[rand.Intn(len(glitchChars))]
-		}
-	}
-	return string(runes)
-}
-
-func (m IntroModel) renderWithPanes() string {
 	var b strings.Builder
 
-	// Header with logo (smaller, left-aligned)
-	headerLogo := lipgloss.NewStyle().
-		Foreground(Cyan).
-		Bold(true).
-		Render("⚡ GOCLIT")
+	// Center padding
+	padX := (m.width - 50) / 2
+	if padX < 0 {
+		padX = 0
+	}
+	pad := strings.Repeat(" ", padX)
 
-	headerVersion := lipgloss.NewStyle().
-		Foreground(Gray500).
-		Render(" " + version)
+	b.WriteString("\n\n")
 
-	header := lipgloss.NewStyle().
-		Width(m.width).
-		Background(BgHighlight).
-		Padding(0, 2).
-		Render(headerLogo + headerVersion)
+	switch m.phase {
+	case 0:
+		// GLITCH PHASE - Matrix-style reveal
+		b.WriteString(m.renderGlitch(pad))
 
-	b.WriteString(header + "\n\n")
-
-	// Calculate pane dimensions
-	paneWidth := (m.width - 6) / 2
-	paneHeight := m.height - 8
-
-	// Left pane - Agents
-	agentsPane := m.renderAgentsPane(paneWidth, paneHeight)
-
-	// Right pane - Chat/Output
-	chatPane := m.renderChatPane(paneWidth, paneHeight)
-
-	// Join panes horizontally
-	panes := lipgloss.JoinHorizontal(lipgloss.Top, agentsPane, "  ", chatPane)
-	b.WriteString(panes)
-
-	// Status bar at bottom
-	statusBar := m.renderStatusBar()
-	b.WriteString("\n" + statusBar)
-
-	return lipgloss.NewStyle().
-		Width(m.width).
-		Height(m.height).
-		Background(BgDark).
-		Render(b.String())
-}
-
-func (m IntroModel) renderAgentsPane(width, height int) string {
-	agents := []struct {
-		icon  string
-		name  string
-		color lipgloss.Color
-	}{
-		{"⚙️", "Sisyphus", Purple},
-		{"🔨", "Hephaestus", Blue},
-		{"🔮", "Oracle", Cyan},
-		{"📚", "Librarian", Green},
-		{"🎨", "Frontend", Pink},
-		{"⚡", "Backend", Orange},
-		{"🔧", "DevOps", Yellow},
+	default:
+		// MAIN RENDER
+		b.WriteString(m.renderMain(pad))
 	}
 
-	var content strings.Builder
-	titleStyle := lipgloss.NewStyle().
-		Foreground(White).
-		Bold(true)
+	return b.String()
+}
 
-	content.WriteString(titleStyle.Render("AGENTS") + "\n\n")
+func (m IntroModel) renderGlitch(pad string) string {
+	var b strings.Builder
 
-	for _, a := range agents {
-		badge := AgentBadge(a.color).Render(a.icon)
-		name := lipgloss.NewStyle().Foreground(Gray300).Render(a.name)
-		content.WriteString(badge + " " + name + "\n")
+	style1 := lipgloss.NewStyle().Foreground(colSecondary)
+	style2 := lipgloss.NewStyle().Foreground(colPrimary)
+	dimStyle := lipgloss.NewStyle().Foreground(colDim)
+
+	for _, row := range m.glitchMap {
+		b.WriteString(pad)
+		for _, ch := range row {
+			r := rand.Float64()
+			if r < 0.5 {
+				b.WriteString(style1.Render(string(ch)))
+			} else if r < 0.8 {
+				b.WriteString(style2.Render(string(ch)))
+			} else {
+				b.WriteString(dimStyle.Render(string(ch)))
+			}
+		}
+		b.WriteString("\n")
 	}
 
-	return ActivePanelStyle.
-		Width(width).
-		Height(height).
-		Render(content.String())
+	return b.String()
 }
 
-func (m IntroModel) renderChatPane(width, height int) string {
-	var content strings.Builder
+func (m IntroModel) renderMain(pad string) string {
+	var b strings.Builder
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(White).
-		Bold(true)
+	// "Welcome to" title
+	titleStyle := lipgloss.NewStyle().Foreground(colDim).Italic(true)
+	b.WriteString(pad + titleStyle.Render("  Welcome to") + "\n\n")
 
-	content.WriteString(titleStyle.Render("CHAT") + "\n\n")
-
-	welcomeStyle := lipgloss.NewStyle().
-		Foreground(Gray500).
-		Italic(true)
-
-	content.WriteString(welcomeStyle.Render("Type a command or ask anything...\n"))
-	content.WriteString(welcomeStyle.Render("Try: ultrawork \"build a REST API\""))
-
-	return PanelStyle.
-		Width(width).
-		Height(height).
-		Render(content.String())
-}
-
-func (m IntroModel) renderStatusBar() string {
-	left := lipgloss.NewStyle().
-		Foreground(Gray500).
-		Render("Press ? for help • q to quit")
-
-	right := lipgloss.NewStyle().
-		Foreground(Cyan).
-		Render("⚡ Provider: claude")
-
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4
-	if gap < 0 {
-		gap = 0
+	// GOCLIT logo with gradient + reveal effect
+	for i, line := range mainLogo {
+		b.WriteString(pad)
+		for j, ch := range line {
+			if j > m.revealCol && m.phase < 4 {
+				// Not revealed yet
+				if rand.Float64() < 0.2 {
+					b.WriteString(lipgloss.NewStyle().Foreground(colDim).Render(string(glitchChars[rand.Intn(len(glitchChars))])))
+				} else {
+					b.WriteString(" ")
+				}
+			} else {
+				// Revealed with gradient
+				ratio := float64(j) / float64(len(line))
+				var col lipgloss.Color
+				switch {
+				case ratio < 0.33:
+					col = colPrimary
+				case ratio < 0.66:
+					col = colSecondary
+				default:
+					col = colAccent
+				}
+				b.WriteString(lipgloss.NewStyle().Foreground(col).Bold(true).Render(string(ch)))
+			}
+		}
+		b.WriteString("\n")
+		_ = i
 	}
 
-	return StatusStyle.
-		Width(m.width).
-		Render(left + strings.Repeat(" ", gap) + right)
-}
-
-// Easing functions
-
-func easeOutExpo(t float64) float64 {
-	if t >= 1 {
-		return 1
+	// Tagline
+	tagStyle := lipgloss.NewStyle().Foreground(colHighlight).Italic(true)
+	if m.revealCol > 30 || m.phase >= 4 {
+		b.WriteString(pad + "                " + tagStyle.Render(tagline) + "\n")
+	} else {
+		b.WriteString("\n")
 	}
-	return 1 - math.Pow(2, -10*t)
+
+	b.WriteString("\n")
+
+	// Terminal Eye
+	if m.phase >= 2 {
+		eye := eyeFrames[m.eyeFrame]
+		eyeStyle := lipgloss.NewStyle().Foreground(colGlow)
+		borderStyle := lipgloss.NewStyle().Foreground(colShadow)
+		pupilStyle := lipgloss.NewStyle().Foreground(colEye).Bold(true)
+
+		for _, line := range eye {
+			spaces := int(m.eyeX)
+			if spaces < 0 {
+				spaces = 0
+			}
+			if spaces > m.width-15 {
+				spaces = m.width - 15
+			}
+			b.WriteString(strings.Repeat(" ", spaces))
+
+			for _, ch := range line {
+				switch ch {
+				case '◉', '⊙', '─':
+					b.WriteString(pupilStyle.Render(string(ch)))
+				case '╭', '╮', '╰', '╯', '│':
+					b.WriteString(borderStyle.Render(string(ch)))
+				default:
+					b.WriteString(eyeStyle.Render(string(ch)))
+				}
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	// Sparkles overlay (simplified - just add at bottom)
+	if m.phase >= 3 && len(m.particles) > 0 {
+		sparkleStyle := lipgloss.NewStyle().Foreground(colHighlight)
+		b.WriteString("\n" + pad)
+		for _, p := range m.particles {
+			if p.life < 15 {
+				b.WriteString(sparkleStyle.Render(p.char + " "))
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Version (only when stable)
+	if m.phase >= 4 {
+		verStyle := lipgloss.NewStyle().Foreground(colDim)
+		b.WriteString("\n" + pad + verStyle.Render("  CLI "+version) + "\n")
+	}
+
+	return b.String()
 }
 
+func (m IntroModel) Done() bool {
+	return m.done
+}
+
+func (m IntroModel) ShowPanes() bool {
+	return m.showPanes
+}
+
+// Helper functions
 func clamp(v, min, max float64) float64 {
 	if v < min {
 		return min
@@ -398,13 +447,4 @@ func clamp(v, min, max float64) float64 {
 	return v
 }
 
-// Run starts the intro animation
-func RunIntro() error {
-	p := tea.NewProgram(
-		NewIntro(80, 24),
-		tea.WithAltScreen(),
-	)
-
-	_, err := p.Run()
-	return err
-}
+// Gradient is defined in theme.go
